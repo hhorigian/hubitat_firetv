@@ -1,13 +1,13 @@
 /**
  *  Hubitat - Amazon Fire TV / Firestick - ADB Driver
- *  Controla Fire TV diretamente via protocolo ADB TCP (sem servidor intermediário)
- *
+ * Controls Fire TV directly via ADB TCP protocol (without an intermediary server) *
  *  Copyright 2026 Vartan Horigian VH / TRATO  |  Apache 2.0
  *  1.5.2026 - Versão 1.1 - 
-*  1.5.2026 - Versão 1.2 - Added functions and defs to use the same commands that Samsung Remote uses (arrowUp, arrowLeft, etc)
- 
- *
- *  SETUP INICIAL:
+ *  1.5.2026 - Versão 1.2 
+ - Added functions and defs to use the same commands that Samsung Remote uses (arrowUp, arrowLeft, etc)
+ - Added Function "appOpenByName", to receive the string(name of App, ex: Netflix, Amazon Prime, YouTube)
+*
+*  INITIAL SETUP:
 * 1. Firestick → Settings → My Fire TV → Developer Options → ADB Debugging: ON
 * 2. Install the driver, configure the IP address, and save.
 * 3. Click any command — the TV will ask "Authorize ADB?"
