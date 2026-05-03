@@ -6,6 +6,7 @@
  *  1.5.2026 - Versão 1.2 
  - Added functions and defs to use the same commands that Samsung Remote uses (arrowUp, arrowLeft, etc)
  - Added Function "appOpenByName", to receive the string(name of App, ex: Netflix, Amazon Prime, YouTube)
+ - Added CurrentApp attribute parse with poll every 30 seconds (configure in preferences)
 *
 *  INITIAL SETUP:
 * 1. Firestick → Settings → My Fire TV → Developer Options → ADB Debugging: ON
@@ -130,12 +131,15 @@ metadata {
         command "disconnect"
         attribute "adbStatus",  "string"
         attribute "currentApp", "string"
+		attribute "currentAppName", "string"        
     }
 
     preferences {
-        input name: "ipAddress", type: "text",   title: "IP do Fire TV",  required: true
-        input name: "adbPort",   type: "number", title: "Porta ADB",       defaultValue: 5555, required: true
+        input name: "ipAddress", type: "text",   title: "Fire TV IP Address",  required: true
+        input name: "adbPort",   type: "number", title: "ADB Port",       defaultValue: 5555, required: true
         input name: "logEnable", type: "bool",   title: "Debug Logging",   defaultValue: true
+        input name: "poltime",   type: "number", title: "Poll Time(secs)",       defaultValue: 30, required: false
+        
     }
 }
 
@@ -144,7 +148,7 @@ metadata {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 def installed() {
-    log.info "[FireTV] Driver instalado"
+    log.info "[FireTV] Driver installed"
     state.connState = "IDLE"
     sendEvent(name: "adbStatus",  value: "disconnected")
     sendEvent(name: "switch",     value: "off")
@@ -155,7 +159,8 @@ def installed() {
 def updated() {
     log.info "[FireTV] Configurações atualizadas"
     if (!state.adbPublicKey || !state.adbKeyD) generateKeyPair()
-}
+    unschedule()
+	runIn(30, "pollCurrentApp")}
 
 def uninstalled() {
     closeSocket()
@@ -205,7 +210,7 @@ private long readInt32LE(byte[] buf, int offset) {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 def generateKeyPair() {
-    log.info "[FireTV] Gerando chave RSA 2048-bit via BigInteger..."
+    log.info "[FireTV] Generating RSA 2048 RSA Key via BigInteger..."
     try {
         def rng = new java.util.Random(now())
         BigInteger p = new BigInteger(1024, 64, rng)
@@ -222,9 +227,9 @@ def generateKeyPair() {
         state.adbKeyD      = d.toString(16)
         state.adbPublicKey = buildAdbPublicKey(n, 65537)
 
-        log.info "[FireTV] Chave gerada. Na 1ª conexão, autorize na tela da TV."
+        log.info "[FireTV] Key generated. In your 1st connection please authorize in your TV Screen."
     } catch (Exception ex) {
-        log.error "[FireTV] Falha ao gerar chave: ${ex.message}"
+        log.error "[FireTV] Failed to generate the key: ${ex.message}"
     }
 }
 
@@ -232,7 +237,7 @@ def generateNewKey() {
     state.adbPublicKey = null
     generateKeyPair()
     sendEvent(name: "adbStatus", value: "nova_chave_gerada")
-    log.warn "[FireTV] Nova chave gerada — autorize novamente na TV."
+    log.warn "[FireTV] New key generated  — please authorizae your TV again."
 }
 
 // Constrói o formato binário da chave pública do Android ADB (528 bytes → base64)
@@ -286,7 +291,7 @@ private byte[] bigIntToFixedBytes(BigInteger val, int size) {
 private byte[] signWithPrivateKey(byte[] token) {
     try {
         if (!state.adbKeyD || !state.adbKeyN) {
-            log.warn "[FireTV] Chave privada não disponível"
+            log.warn "[FireTV] Private key not available"
             return null
         }
         BigInteger d = new BigInteger(state.adbKeyD as String, 16)
@@ -314,10 +319,10 @@ private byte[] signWithPrivateKey(byte[] token) {
         BigInteger m   = new BigInteger(1, em)
         BigInteger sig = m.modPow(d, n)
 
-        logD "Assinatura RSA calculada (${keySize} bytes)"
+        logD "RSA Signature Calculated (${keySize} bytes)"
         return bigIntToFixedBytes(sig, keySize)
     } catch (Exception ex) {
-        log.error "[FireTV] Erro ao assinar token: ${ex.message}"
+        log.error "[FireTV] Error to assing Token: ${ex.message}"
         return null
     }
 }
@@ -328,23 +333,23 @@ private byte[] signWithPrivateKey(byte[] token) {
 
 private void connectToDevice() {
     if (state.connState != "IDLE") {
-        logD "Já conectando (${state.connState})"
+        logD "Already connecting (${state.connState})"
         return
     }
     if (!settings.ipAddress) {
-        log.error "[FireTV] IP não configurado"
+        log.error "[FireTV] Without IP setup"
         return
     }
     if (!state.adbPublicKey) {
-        log.warn "[FireTV] Sem chave pública, gerando..."
+        log.warn "[FireTV] Wihout public key, generating..."
         generateKeyPair()
         if (!state.adbPublicKey) {
-            log.error "[FireTV] Falha ao obter chave pública"
+            log.error "[FireTV] Failed to obtain public key"
             return
         }
     }
 
-    logD "Conectando a ${settings.ipAddress}:${settings.adbPort}"
+    logD "Connecting to ${settings.ipAddress}:${settings.adbPort}"
     state.connState  = "CONNECTING"
     state.remoteId   = 0
     rxBuf[device.id] = ""
@@ -356,7 +361,7 @@ private void connectToDevice() {
             byteInterface: true,
             timeout: 5000
         )
-        sendEvent(name: "adbStatus", value: "conectando")
+        sendEvent(name: "adbStatus", value: "connecting")
         pauseExecution(200)
         state.connState = "AUTH_WAIT"
         sendAdbConnect()
@@ -372,7 +377,7 @@ private void closeSocket() {
     state.connState   = "IDLE"
     state.remoteId    = 0
     state.promptCount = 0
-    sendEvent(name: "adbStatus", value: "desconectado")
+    sendEvent(name: "adbStatus", value: "disconnected")
 }
 
 def disconnect() {
@@ -383,12 +388,12 @@ def disconnect() {
 def socketStatus(String message) {
     logD "Socket: ${message}"
     if (message.contains("CLOSED") || message.contains("ERROR") || message.contains("error")) {
-        log.warn "[FireTV] Socket fechado: ${message}"
+        log.warn "[FireTV] Socket closed: ${message}"
         unschedule("forceCloseShell")
         state.connState   = "IDLE"
         state.remoteId    = 0
         state.promptCount = 0
-        sendEvent(name: "adbStatus", value: "desconectado")
+        sendEvent(name: "adbStatus", value: "disconnected")
         // Reconecta automaticamente se havia comando pendente
         if (state.pendingShellCmd) {
             runIn(2, "reconnectPending")
@@ -398,7 +403,7 @@ def socketStatus(String message) {
 
 def reconnectPending() {
     if (state.connState == "IDLE" && state.pendingShellCmd) {
-        logD "Reconectando para executar comando pendente"
+        logD "Reconnecting to execute pending command"
         connectToDevice()
     }
 }
@@ -454,7 +459,7 @@ def parse(String message) {
     rxBuf[key] = (rxBuf[key] ?: "") + message.toUpperCase()
 
     if (rxBuf[key].length() > 131072) {
-        log.warn "[FireTV] Buffer overflow, limpando"
+        log.warn "[FireTV] Buffer overflow, cleaning"
         rxBuf[key] = ""
         return
     }
@@ -483,9 +488,9 @@ private void handleAdbMessage(int cmd, int arg0, int arg1, byte[] data) {
     switch (cmd) {
 
         case CMD_CNXN:
-            logD "← CNXN: autenticado"
+            logD "← CNXN: authenticated"
             state.connState = "CONNECTED"
-            sendEvent(name: "adbStatus", value: "conectado")
+            sendEvent(name: "adbStatus", value: "Connected")
             executePendingShell()
             break
 
@@ -494,7 +499,7 @@ private void handleAdbMessage(int cmd, int arg0, int arg1, byte[] data) {
                 if (state.connState == "AUTH_WAIT") {
                     // 1ª tentativa: assinar o token com a chave privada
                     // Se a chave já for confiável, a TV responde com CNXN (sem diálogo)
-                    logD "← AUTH TOKEN → tentando assinatura RSA"
+                    logD "← AUTH TOKEN → trying RSA signature"
                     state.connState = "AUTH_PUBKEY_WAIT"
                     byte[] sig = signWithPrivateKey(data)
                     if (sig) {
@@ -502,17 +507,17 @@ private void handleAdbMessage(int cmd, int arg0, int arg1, byte[] data) {
                         logD "→ AUTH SIGNATURE"
                     } else {
                         // Sem chave privada: vai direto para chave pública
-                        sendEvent(name: "adbStatus", value: "aguardando_autorizacao")
-                        log.info "[FireTV] Selecione 'Sempre permitir' na tela da TV"
+                        sendEvent(name: "adbStatus", value: " waiting for sync")
+                        log.info "[FireTV] Select  'Always Allow' in your TV Screeen"
                         sendAdbMsg(CMD_AUTH, AUTH_RSAPUBLICKEY, 0, state.adbPublicKey.bytes)
-                        logD "→ AUTH RSAPUBLICKEY (sem chave privada)"
+                        logD "→ AUTH RSAPUBLICKEY (without private key)"
                     }
                 } else {
                     // Assinatura rejeitada → chave não reconhecida → enviar chave pública
                     // A TV mostrará o diálogo "Autorizar ADB?" somente desta vez
-                    logD "← AUTH TOKEN (assinatura rejeitada) → enviando chave pública"
+                    logD "← AUTH TOKEN (signtature rejected) → sending public key"
                     sendEvent(name: "adbStatus", value: "aguardando_autorizacao")
-                    log.info "[FireTV] Selecione 'Sempre permitir' na tela da TV"
+                    log.info "[FireTV] Select  'Always Allow' in your TV Screeen"
                     sendAdbMsg(CMD_AUTH, AUTH_RSAPUBLICKEY, 0, state.adbPublicKey.bytes)
                     logD "→ AUTH RSAPUBLICKEY"
                 }
@@ -542,12 +547,49 @@ private void handleAdbMessage(int cmd, int arg0, int arg1, byte[] data) {
                 String resp = new String(data).replaceAll(/[\x00-\x08\x0b-\x1f]/, "").trim()
                 if (resp) {
                     logD "← data: ${resp.take(200)}"
-                    if (state.awaitCurrentApp && resp.contains("mCurrentFocus")) {
-                        state.awaitCurrentApp = false
-                        def m = (resp =~ /\{[^}]*\s+([\w.]+)\/([\w.]+)\}/)
+                    if (state.awaitCurrentApp && (
+                            resp.contains("mCurrentFocus") ||
+                            resp.contains("mFocusedApp") ||
+                            resp.contains("topResumedActivity")
+                        )) {
+
+                        def m = (resp =~ /([a-zA-Z0-9_.]+)\/([a-zA-Z0-9_.$]+)/)
+
                         if (m) {
-                            sendEvent(name: "currentApp", value: m[0][1])
-                            log.info "[FireTV] App atual: ${m[0][1]}"
+                            state.awaitCurrentApp = false
+
+                            String newApp = m[0][1]
+
+                            Map friendlyNames = [
+                                "com.netflix.ninja"                 : "Netflix",
+                                "com.amazon.firebat"                : "Prime Video",
+                                "com.disney.disneyplus"             : "Disney+",
+                                "com.hbo.hbonow"                    : "HBO Max",
+                                "com.amazon.firetv.youtube"         : "YouTube",
+                                "com.apple.atve.amazon.appletv"     : "Apple TV",
+                                "com.spotify.music"                 : "Spotify",
+                                "com.plexapp.android"               : "Plex",
+                                "tv.twitch.android.app"             : "Twitch"
+                            ]
+
+                            String friendlyName = friendlyNames[newApp] ?: newApp
+
+                            if (device.currentValue("currentApp") != newApp) {
+
+                                sendEvent(name: "currentApp", value: newApp)
+
+                                sendEvent(
+                                    name: "currentAppName",
+                                    value: friendlyName
+                                )
+
+                                log.info "[FireTV] Current app changed to: ${friendlyName} (${newApp})"
+                            }                            
+
+                            
+                            
+                        } else {
+                            logD "Ignoring answer without package/valid activity: ${resp.take(200)}"
                         }
                     }
                     // Detecta prompt do shell ($ ou #) e conta ocorrências:
@@ -557,7 +599,7 @@ private void handleAdbMessage(int cmd, int arg0, int arg1, byte[] data) {
                         state.promptCount = (state.promptCount ?: 0) + 1
                         logD "Prompt #${state.promptCount}"
                         if (state.promptCount >= 2) {
-                            logD "→ Comando concluído, fechando shell"
+                            logD "→ Command sent successfully, closing shell"
                             state.connState = "SHELL_CLOSING"
                             sendAdbMsg(CMD_CLSE, LOCAL_ID, state.remoteId as int, new byte[0])
                         }
@@ -622,10 +664,10 @@ def sendShell(String shellCmd) {
         case "SHELL_READY":
         case "SHELL_CLOSING":
             // Shell ocupado: comando ficará em fila e será executado após CMD_CLSE
-            logD "Shell ocupado (${state.connState}), na fila"
+            logD "Shell busy (${state.connState}), in queue"
             break
         default:
-            logD "Conectando (${state.connState}), na fila"
+            logD "Connecting (${state.connState}), na fila"
     }
 }
 
@@ -720,24 +762,28 @@ def sendKey(String key) {
         case "CHDOWN":
         case "CHANNELDOWN": channelDown(); break
         default:
-            log.warn "[FireTV] sendKey nao mapeado: ${key}"
+            log.warn "[FireTV] sendKey not mapped: ${key}"
     }
 }
 
 
 // ─── Apps ─────────────────────────────────────────────────────────────────────
-def launchApp(String pkg)  { sendShell("monkey -p ${pkg} -c android.intent.category.LAUNCHER 1") }
-def launchNetflix()        { launchApp(APPS.netflix) }
-def launchYouTube()        { launchApp(APPS.youtube) }
+def launchApp(String pkg)  { 
+    sendShell("monkey -p ${pkg} -c android.intent.category.LAUNCHER 1")  
+	refreshCurrentAppSoon()
+}
+def launchNetflix()        { launchApp(APPS.netflix)  }
+def launchYouTube()        { launchApp(APPS.youtube)  }
 def launchDisneyPlus()     { launchApp(APPS.disney) }
 
 // LandingActivity não é exportada; usa deep link primevideo:// roteado pelo Android
 // Prime Video (Fire TV usa LEANBACK_LAUNCHER + DeepLinkRoutingActivity)
 def launchPrimeVideo() {
     sendShell("am start -a android.intent.action.MAIN -c android.intent.category.LEANBACK_LAUNCHER -n com.amazon.firebat/com.amazon.firebatcore.deeplink.DeepLinkRoutingActivity")
+    refreshCurrentAppSoon()
 }
-def launchHBOMax()     { sendShell("am start -n com.hbo.hbonow/com.wbd.beam.BeamActivity") }
-def launchAppleTV()    { sendShell("am start -n com.apple.atve.amazon.appletv/.MainActivity") }
+def launchHBOMax()     { sendShell("am start -n com.hbo.hbonow/com.wbd.beam.BeamActivity") refreshCurrentAppSoon() }
+def launchAppleTV()    { sendShell("am start -n com.apple.atve.amazon.appletv/.MainActivity")  refreshCurrentAppSoon()}
 
 def appOpenByName(String appName) {
 
@@ -773,9 +819,10 @@ def appOpenByName(String appName) {
             break
 
         default:
-            log.warn "[FireTV] appOpenByName: app desconhecido: ${appName}"
+            log.warn "[FireTV] appOpenByName: unkown app: ${appName}"
             break
     }
+     refreshCurrentAppSoon()
 }
 
 // ─── Shell & Status ───────────────────────────────────────────────────────────
@@ -783,7 +830,16 @@ def sendShellCommand(String cmd) { sendShell(cmd) }
 
 def getCurrentApp() {
     state.awaitCurrentApp = true
-    sendShell("dumpsys window windows | grep -E mCurrentFocus")
+    sendShell("dumpsys window | grep -E 'mCurrentFocus|mFocusedApp|topResumedActivity|mCurrentFocus'")
+}
+
+def pollCurrentApp() {
+    getCurrentApp()
+    runIn(poltime, "pollCurrentApp")
+}
+
+private void refreshCurrentAppSoon() {
+    runIn(3, "getCurrentApp")
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
