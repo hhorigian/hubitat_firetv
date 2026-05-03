@@ -2,14 +2,17 @@
  *  Hubitat - Amazon Fire TV / Firestick - ADB Driver
  *  Controla Fire TV diretamente via protocolo ADB TCP (sem servidor intermediário)
  *
- *  Copyright 2026 VH / TRATO  |  Apache 2.0
+ *  Copyright 2026 Vartan Horigian VH / TRATO  |  Apache 2.0
  *  1.5.2026 - Versão 1.1 - 
+*  1.5.2026 - Versão 1.2 - Added functions and defs to use the same commands that Samsung Remote uses (arrowUp, arrowLeft, etc)
+ 
  *
  *  SETUP INICIAL:
- *    1. Firestick → Settings → My Fire TV → Developer Options → ADB Debugging: ON
- *    2. Instale o driver, configure o IP e salve
- *    3. Clique em qualquer comando — a TV vai perguntar "Autorizar ADB?"
- *    4. Selecione "Sempre permitir" → pronto, autorizado para sempre
+* 1. Firestick → Settings → My Fire TV → Developer Options → ADB Debugging: ON
+* 2. Install the driver, configure the IP address, and save.
+* 3. Click any command — the TV will ask "Authorize ADB?"
+* 4. Select "Always allow" → done, authorized forever.
+
  */
 
 import groovy.transform.Field
@@ -69,7 +72,7 @@ metadata {
         capability "Switch"
         capability "Refresh"
 
-        command "home"
+ 		command "home"
         command "back"
         command "menu"
         command "wakeUp"
@@ -78,7 +81,13 @@ metadata {
         command "dpadDown"
         command "dpadLeft"
         command "dpadRight"
+        command "arrowLeft"
+        command "arrowRight"
+        command "arrowUp"
+        command "arrowDown"
         command "select"
+        command "enter"
+        command "numericKeyPad"
         command "volumeUp"
         command "volumeDown"
         command "mute"
@@ -87,15 +96,29 @@ metadata {
         command "playPause"
         command "stop"
         command "fastForward"
+        command "fastBack"
         command "rewind"
         command "nextTrack"
         command "previousTrack"
+        command "guide"
+        command "sourceSetOSD"
+        command "sourceToggle"
+        command "channelList"
+        command "channelUp"
+        command "channelDown"
+        command "channelSet",      [[name:"Channel*", type:"STRING",
+                                      description:"Canal"]]
+        command "previousChannel"
+        command "exit"
+        command "Return"
         command "launchNetflix"
         command "launchPrimeVideo"
         command "launchYouTube"
         command "launchDisneyPlus"
         command "launchHBOMax"
         command "launchAppleTV"
+        command "appOpenByName",    [[name:"AppName*", type:"STRING",
+                                      description:"Nome do app (Netflix, PrimeVideo, Disney, YouTube, AppleTV, HBOMax)"]]
         command "launchApp",        [[name:"PackageName*", type:"STRING",
                                       description:"Package (ex: com.netflix.ninja)"]]
         command "sendKeyEvent",     [[name:"KeyCode*",     type:"NUMBER",
@@ -615,6 +638,7 @@ def off()     { sleepDevice(); sendEvent(name: "switch", value: "off") }
 def refresh() { getCurrentApp() }
 
 // ─── Key Events ───────────────────────────────────────────────────────────────
+// ─── Key Events ───────────────────────────────────────────────────────────────
 def home()          { keyEvent(KEY.HOME) }
 def back()          { keyEvent(KEY.BACK) }
 def menu()          { keyEvent(KEY.MENU) }
@@ -625,6 +649,10 @@ def dpadUp()        { keyEvent(KEY.DPAD_UP) }
 def dpadDown()      { keyEvent(KEY.DPAD_DOWN) }
 def dpadLeft()      { keyEvent(KEY.DPAD_LEFT) }
 def dpadRight()     { keyEvent(KEY.DPAD_RIGHT) }
+def arrowLeft()     { dpadLeft() }
+def arrowRight()    { dpadRight() }
+def arrowUp()       { dpadUp() }
+def arrowDown()     { dpadDown() }
 def volumeUp()      { keyEvent(KEY.VOLUME_UP) }
 def volumeDown()    { keyEvent(KEY.VOLUME_DOWN) }
 def mute()          { keyEvent(KEY.VOLUME_MUTE) }
@@ -633,12 +661,69 @@ def pause()         { keyEvent(KEY.PAUSE) }
 def playPause()     { keyEvent(KEY.PLAY_PAUSE) }
 def stop()          { keyEvent(KEY.STOP) }
 def fastForward()   { keyEvent(KEY.FF) }
+def fastBack()      { rewind() }
 def rewind()        { keyEvent(KEY.REWIND) }
 def nextTrack()     { keyEvent(KEY.NEXT) }
 def previousTrack() { keyEvent(KEY.PREV) }
+def enter()         { select() }
+def numericKeyPad() { keyEvent(7) }
+def guide()         { keyEvent(172) }
+def sourceSetOSD()  { keyEvent(178) }
+def sourceToggle()  { keyEvent(178) }
+def channelList()   { keyEvent(229) }
+def channelUp()     { keyEvent(166) }
+def channelDown()   { keyEvent(167) }
+def channelSet(channel) {
+    channel.toString().each { digit ->
+        if (digit >= "0" && digit <= "9") {
+            keyEvent(7 + digit.toInteger())
+            pauseExecution(150)
+        }
+    }
+    keyEvent(KEY.ENTER)
+}
+def previousChannel() { keyEvent(229) }
+def exit()            { keyEvent(KEY.ESCAPE) }
+def Return()          { back() }
 
 def keyEvent(int code)  { sendShell("input keyevent ${code}") }
 def sendKeyEvent(code)  { keyEvent(code as int) }
+def sendKey(String key) {
+    switch (key?.toUpperCase()) {
+        case "HOME": home(); break
+        case "MENU": menu(); break
+        case "RETURN":
+        case "BACK": Return(); break
+        case "EXIT": exit(); break
+        case "ENTER":
+        case "SELECT": enter(); break
+        case "LEFT": arrowLeft(); break
+        case "RIGHT": arrowRight(); break
+        case "UP": arrowUp(); break
+        case "DOWN": arrowDown(); break
+        case "PLAY": play(); break
+        case "PAUSE": pause(); break
+        case "STOP": stop(); break
+        case "FF":
+        case "FF_":
+        case "FASTFORWARD": fastForward(); break
+        case "REWIND":
+        case "REW":
+        case "FASTBACK": fastBack(); break
+        case "VOLUP":
+        case "VOLUMEUP": volumeUp(); break
+        case "VOLDOWN":
+        case "VOLUMEDOWN": volumeDown(); break
+        case "MUTE": mute(); break
+        case "CHUP":
+        case "CHANNELUP": channelUp(); break
+        case "CHDOWN":
+        case "CHANNELDOWN": channelDown(); break
+        default:
+            log.warn "[FireTV] sendKey nao mapeado: ${key}"
+    }
+}
+
 
 // ─── Apps ─────────────────────────────────────────────────────────────────────
 def launchApp(String pkg)  { sendShell("monkey -p ${pkg} -c android.intent.category.LAUNCHER 1") }
@@ -653,6 +738,45 @@ def launchPrimeVideo() {
 }
 def launchHBOMax()     { sendShell("am start -n com.hbo.hbonow/com.wbd.beam.BeamActivity") }
 def launchAppleTV()    { sendShell("am start -n com.apple.atve.amazon.appletv/.MainActivity") }
+
+def appOpenByName(String appName) {
+
+    switch(appName?.trim()) {
+
+        case "Netflix":
+            launchNetflix()
+            break
+
+        case "PrimeVideo":
+        case "Prime Video":
+        case "Prime%20Video":
+            launchPrimeVideo()
+            break
+
+        case "Disney":
+        case "Disney+":
+            launchDisneyPlus()
+            break
+
+        case "YouTube":
+            launchYouTube()
+            break
+
+        case "AppleTV":
+            launchAppleTV()
+            break
+
+        case "HBOMax":
+        case "HBO Max":
+        case "HBO%20Max":
+            launchHBOMax()
+            break
+
+        default:
+            log.warn "[FireTV] appOpenByName: app desconhecido: ${appName}"
+            break
+    }
+}
 
 // ─── Shell & Status ───────────────────────────────────────────────────────────
 def sendShellCommand(String cmd) { sendShell(cmd) }
