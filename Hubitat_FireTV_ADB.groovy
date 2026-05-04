@@ -381,6 +381,7 @@ private void connectToDevice() {
 }
 
 private void closeSocket() {
+    unschedule("authPubkeyTimeout")
     try { interfaces.rawSocket.close() } catch (e) { /* ignora */ }
     state.connState   = "IDLE"
     state.remoteId    = 0
@@ -497,6 +498,7 @@ private void handleAdbMessage(int cmd, int arg0, int arg1, byte[] data) {
 
         case CMD_CNXN:
             logD "← CNXN: authenticated"
+            unschedule("authPubkeyTimeout")
             state.connState = "CONNECTED"
             sendEvent(name: "adbStatus", value: "Connected")
             executePendingShell()
@@ -513,14 +515,15 @@ private void handleAdbMessage(int cmd, int arg0, int arg1, byte[] data) {
                     if (sig) {
                         sendAdbMsg(CMD_AUTH, AUTH_SIGNATURE, 0, sig)
                         logD "→ AUTH SIGNATURE"
-                        runIn(20, "authPubkeyTimeout")
+                        // Sem timeout aqui: se aceito, CNXN chega rapidamente e cancela;
+                        // se rejeitado, chega outro AUTH_TOKEN e o else abaixo agenda o timeout
                     } else {
                         // Sem chave privada: vai direto para chave pública
                         sendEvent(name: "adbStatus", value: "waiting_auth")
                         log.info "[FireTV] Select 'Always Allow' in your TV Screen"
                         sendAdbMsg(CMD_AUTH, AUTH_RSAPUBLICKEY, 0, state.adbPublicKey.bytes)
                         logD "→ AUTH RSAPUBLICKEY (without private key)"
-                        runIn(20, "authPubkeyTimeout")
+                        runIn(60, "authPubkeyTimeout")
                     }
                 } else {
                     // Assinatura rejeitada → chave não reconhecida → enviar chave pública
@@ -530,7 +533,7 @@ private void handleAdbMessage(int cmd, int arg0, int arg1, byte[] data) {
                     log.info "[FireTV] Select 'Always Allow' in your TV Screen"
                     sendAdbMsg(CMD_AUTH, AUTH_RSAPUBLICKEY, 0, state.adbPublicKey.bytes)
                     logD "→ AUTH RSAPUBLICKEY"
-                    runIn(20, "authPubkeyTimeout")
+                    runIn(60, "authPubkeyTimeout")
                 }
             }
             break
