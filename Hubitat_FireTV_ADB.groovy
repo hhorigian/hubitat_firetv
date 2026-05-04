@@ -7,6 +7,12 @@
  - Added functions and defs to use the same commands that Samsung Remote uses (arrowUp, arrowLeft, etc)
  - Added Function "appOpenByName", to receive the string(name of App, ex: Netflix, Amazon Prime, YouTube)
  - Added CurrentApp attribute parse with poll every 30 seconds (configure in preferences)
+ *  2.5.2026 - Versão 1.3 
+    - Fixed Authorization hangout loop. You need to :
+    On Fire TV → Settings → My Fire TV → Developer Options → Revoke ADB Authorizations
+    Then load the new driver on Hubitat and click any command
+    On the Fire TV screen, the dialog box "Authorize ADB?" will appear → select "Always Allow"
+
 *
 *  INITIAL SETUP:
 * 1. Firestick → Settings → My Fire TV → Developer Options → ADB Debugging: ON
@@ -159,8 +165,10 @@ def installed() {
 def updated() {
     log.info "[FireTV] Configurações atualizadas"
     if (!state.adbPublicKey || !state.adbKeyD) generateKeyPair()
+    closeSocket()
     unschedule()
-	runIn(30, "pollCurrentApp")}
+    runIn(30, "pollCurrentApp")
+}
 
 def uninstalled() {
     closeSocket()
