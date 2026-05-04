@@ -505,21 +505,24 @@ private void handleAdbMessage(int cmd, int arg0, int arg1, byte[] data) {
                     if (sig) {
                         sendAdbMsg(CMD_AUTH, AUTH_SIGNATURE, 0, sig)
                         logD "→ AUTH SIGNATURE"
+                        runIn(20, "authPubkeyTimeout")
                     } else {
                         // Sem chave privada: vai direto para chave pública
-                        sendEvent(name: "adbStatus", value: " waiting for sync")
-                        log.info "[FireTV] Select  'Always Allow' in your TV Screeen"
+                        sendEvent(name: "adbStatus", value: "waiting_auth")
+                        log.info "[FireTV] Select 'Always Allow' in your TV Screen"
                         sendAdbMsg(CMD_AUTH, AUTH_RSAPUBLICKEY, 0, state.adbPublicKey.bytes)
                         logD "→ AUTH RSAPUBLICKEY (without private key)"
+                        runIn(20, "authPubkeyTimeout")
                     }
                 } else {
                     // Assinatura rejeitada → chave não reconhecida → enviar chave pública
                     // A TV mostrará o diálogo "Autorizar ADB?" somente desta vez
-                    logD "← AUTH TOKEN (signtature rejected) → sending public key"
+                    logD "← AUTH TOKEN (signature rejected) → sending public key"
                     sendEvent(name: "adbStatus", value: "aguardando_autorizacao")
-                    log.info "[FireTV] Select  'Always Allow' in your TV Screeen"
+                    log.info "[FireTV] Select 'Always Allow' in your TV Screen"
                     sendAdbMsg(CMD_AUTH, AUTH_RSAPUBLICKEY, 0, state.adbPublicKey.bytes)
                     logD "→ AUTH RSAPUBLICKEY"
+                    runIn(20, "authPubkeyTimeout")
                 }
             }
             break
@@ -646,6 +649,13 @@ def forceCloseShell() {
     if (state.connState in ["SHELL_OPENING", "SHELL_READY", "SHELL_CLOSING"]) {
         log.warn "[FireTV] Timeout: forçando fechamento do socket"
         state.pendingShellCmd = null   // descarta para não loop infinito
+        closeSocket()
+    }
+}
+
+def authPubkeyTimeout() {
+    if (state.connState == "AUTH_PUBKEY_WAIT") {
+        log.warn "[FireTV] Auth timeout — FireTV did not respond to public key. Resetting to IDLE."
         closeSocket()
     }
 }
