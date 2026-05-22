@@ -12,7 +12,9 @@
         On Fire TV → Settings → My Fire TV → Developer Options → Revoke ADB Authorizations
         Then load the new driver on Hubitat and click any command
         On the Fire TV screen, the dialog box "Authorize ADB?" will appear → select "Always Allow"
-
+    *  21.5.2026 - Versão 1.4 
+        - Fixed AppleTV launch command and added HBOMax launch command. 
+        - Preserves TCP connection when updating preferences. 
     *
     *  INITIAL SETUP:
     * 1. Firestick → Settings → My Fire TV → Developer Options → ADB Debugging: ON
@@ -166,7 +168,14 @@
         log.info "[FireTV] Configurações atualizadas"
         if (!state.adbPublicKey || !state.adbKeyD) generateKeyPair()
         state.waitingForUserAuth = false
-        closeSocket()
+        boolean ipChanged   = (state.lastIp   != settings.ipAddress)
+        boolean portChanged = (state.lastPort != (settings.adbPort as String))
+        if (ipChanged || portChanged) {
+            log.info "[FireTV] IP/porta alterados — reconectando"
+            state.lastIp   = settings.ipAddress
+            state.lastPort = settings.adbPort as String
+            closeSocket()
+        }
         unschedule()
         runIn(30, "pollCurrentApp")
     }
@@ -839,8 +848,8 @@
         sendShell("am start -a android.intent.action.MAIN -c android.intent.category.LEANBACK_LAUNCHER -n com.amazon.firebat/com.amazon.firebatcore.deeplink.DeepLinkRoutingActivity")
         refreshCurrentAppSoon()
     }
-    def launchHBOMax()     { sendShell("am start -n com.hbo.hbonow/com.wbd.beam.BeamActivity") refreshCurrentAppSoon() }
-    def launchAppleTV()    { sendShell("am start -n com.apple.atve.amazon.appletv/.MainActivity")  refreshCurrentAppSoon()}
+    def launchHBOMax()     { sendShell("am start -n com.hbo.hbonow/com.wbd.beam.BeamActivity"); refreshCurrentAppSoon() }
+    def launchAppleTV()    { sendShell("am start -n com.apple.atve.amazon.appletv/.MainActivity"); refreshCurrentAppSoon() }
 
     def appOpenByName(String appName) {
 
