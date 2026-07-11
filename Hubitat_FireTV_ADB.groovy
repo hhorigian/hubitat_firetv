@@ -32,6 +32,14 @@
           session stayed open after the original manual pairing; the v1.5 Initialize fix forced
           a real reconnect after hub reboot, which exposed it as "asks to authorize again".
           Fixed by signing the token directly instead of re-hashing it.
+    *  11.7.2026 - Versão 1.7
+        - Fix: getCurrentApp() sometimes reported "dev" as the current app instead of the real
+          one (e.g. YouTube). Cause: the shell echoes the command line back before the real
+          dumpsys output arrives, and that echo ("...2>/dev/null | grep -E 'mCurrentFocus|...'")
+          already contains the trigger keywords AND matches the old package/activity regex as
+          "dev/null". The parser locked onto that false match and ignored the real output.
+          Fixed by requiring the package group to contain a dot (all Android package names do,
+          e.g. com.amazon.firetv.youtube), which "dev" never does.
     *
     *  INITIAL SETUP:
     * 1. Firestick → Settings → My Fire TV → Developer Options → ADB Debugging: ON
@@ -619,7 +627,9 @@
                                 resp.contains("topResumedActivity")
                             )) {
 
-                            def m = (resp =~ /([a-zA-Z0-9_.]+)\/([a-zA-Z0-9_.$]+)/)
+                            // Exige ao menos um "." no package (ex: com.amazon.firetv.youtube) para não
+                            // casar falsos positivos do eco do próprio comando shell (ex: "2>/dev/null" → "dev").
+                            def m = (resp =~ /([a-zA-Z0-9_]+\.[a-zA-Z0-9_.]+)\/([a-zA-Z0-9_.$]+)/)
 
                             if (m) {
                                 state.awaitCurrentApp = false
