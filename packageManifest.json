@@ -1,0 +1,17 @@
+{
+  "packageName": "Amazon Fire TV (ADB)",
+  "author": "VH",
+  "version": "1.7",
+  "minimumHEVersion": "2.3.7.100",
+  "dateReleased": "2026-07-11",
+  "releaseNotes": "Improved current app detection and fixed ADB reconnection and authorization after hub reboot.",
+  "drivers": [
+    {
+      "id": "f3ca4978-78a2-4c64-967b-715a9a5112fb",
+      "name": "Amazon Fire TV (ADB)",
+      "namespace": "TRATO",
+      "location": "https://raw.githubusercontent.com/hhorigian/hubitat_firetv/main/Hubitat_FireTV_ADB.groovy",
+      "required": true
+    }
+  ]
+}
