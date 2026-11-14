@@ -3,7 +3,7 @@
   "author": "VH",
   "version": "1.7",
   "minimumHEVersion": "2.3.7.100",
-  "dateReleased": "2026-07-11",
+  "dateReleased": "2026-11-13",
   "releaseNotes": "Improved current app detection and fixed ADB reconnection and authorization after hub reboot.",
   "drivers": [
     {
